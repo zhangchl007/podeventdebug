@@ -33,6 +33,7 @@ func onAdd(obj interface{}) {
 		fmt.Printf("Error during conversion, this does not seem to be a pod\n")
 		return
 	}
+
 	handleEvent(pod, "ADD")
 }
 
@@ -46,14 +47,35 @@ func onDelete(obj interface{}) {
 	handleEvent(pod, "DEL")
 }
 
+//
 // Our event handler for modification of a pod
-func onUpdate(old interface{}, new interface{}) {
-	pod, ok := old.(*v1.Pod)
-	if !ok {
-		fmt.Printf("Error during conversion, this does not seem to be a pod\n")
+//
+
+func onUpdate(oldobj interface{}, newobj interface{}) {
+
+	oldPod := oldobj.(*v1.Pod)
+	newPod := newobj.(*v1.Pod)
+	//fmt.Println(oldPod.ObjectMeta.Name)
+	//fmt.Println(newPod.ObjectMeta.Name)
+	if newPod.ObjectMeta.DeletionTimestamp != nil && oldPod.ObjectMeta.DeletionTimestamp == nil {
+		fmt.Printf("Pod deleted event: %v\n", oldPod.ObjectMeta.Name)
 		return
 	}
-	handleEvent(pod, "Update")
+
+	if newPod.Status.Phase == "Running" && newPod.ObjectMeta.DeletionTimestamp == nil {
+		var containerStatus []v1.ContainerStatus
+		containerStatus = append(containerStatus, newPod.Status.ContainerStatuses...)
+		for _, container := range containerStatus {
+			if container.Ready {
+				return
+			}
+		}
+
+		fmt.Printf("Pod added event: %v\n", newPod.ObjectMeta.Name)
+		fmt.Printf("Pod added event, old pod: %v\n", oldPod.ObjectMeta.Name)
+		return
+	}
+
 }
 
 // Create a channel that will be closed when a signal is received
@@ -97,13 +119,18 @@ func main() {
 	// expects two argument - a clientset and a resync time (after this time,
 	// the cache will be rebuilt from scratch)
 	//
-	factory := informers.NewSharedInformerFactory(clientset, 30*time.Second)
+
+	factory := informers.NewSharedInformerFactoryWithOptions(
+		clientset,
+		time.Minute*10,
+		informers.WithNamespace("apisix"),
+	)
 	//
 	// We can now ask our factory to create a pod informer for us - this
-	// will be a shared informer that is listening to Pods
+	// will be a shared informer that is listening to Pods and filter namespace
 	//
 	podInformer := factory.Core().V1().Pods().Informer()
-	fmt.Println("Starting informer")
+
 	//
 	// Starting the factory will start all informers created
 	// by this factory
@@ -124,8 +151,8 @@ func main() {
 	fmt.Println("Informer synced, now adding event handlers and waiting for stop channel")
 	podInformer.AddEventHandler(
 		&cache.ResourceEventHandlerFuncs{
-			AddFunc:    onAdd,
-			DeleteFunc: onDelete,
+			//AddFunc:    onAdd,
+			//DeleteFunc: onDelete,
 			UpdateFunc: onUpdate,
 		})
 	<-stopCh

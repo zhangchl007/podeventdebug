@@ -122,7 +122,7 @@ func main() {
 
 	factory := informers.NewSharedInformerFactoryWithOptions(
 		clientset,
-		time.Minute*10,
+		time.Minute*0,
 		informers.WithNamespace("apisix"),
 	)
 	//
